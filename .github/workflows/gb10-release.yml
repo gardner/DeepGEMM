@@ -1,0 +1,233 @@
+name: GB10 Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release-tag:
+        description: "GitHub release tag. Defaults to gb10-deepgemm-v<sha>."
+        required: false
+        type: string
+      python-version:
+        description: "Python version for the wheel."
+        required: false
+        default: "3.13"
+        type: string
+      cuda-version:
+        description: "CUDA toolkit version to install."
+        required: false
+        default: "13.0.0"
+        type: string
+      torch-wheel-url:
+        description: "Optional prebuilt GB10 PyTorch wheel URL."
+        required: false
+        type: string
+      torch-spec:
+        description: "Fallback torch spec when torch-wheel-url is empty."
+        required: false
+        default: "torch --pre"
+        type: string
+      torch-index-url:
+        description: "Fallback torch index URL."
+        required: false
+        default: "https://download.pytorch.org/whl/nightly/cu130"
+        type: string
+      publish-release:
+        description: "Upload the wheel to a GitHub release."
+        required: false
+        default: true
+        type: boolean
+  push:
+    tags:
+      - "gb10-deepgemm-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gb10-deepgemm-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TORCH_CUDA_ARCH_LIST: "12.1a"
+  CMAKE_CUDA_ARCHITECTURES: "121a"
+  DG_FORCE_BUILD: "1"
+  DG_USE_LOCAL_VERSION: "0"
+  MAX_JOBS: "2"
+  NVCC_THREADS: "2"
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      python_version: ${{ steps.meta.outputs.python_version }}
+      cuda_version: ${{ steps.meta.outputs.cuda_version }}
+      cuda_suffix: ${{ steps.meta.outputs.cuda_suffix }}
+      torch_wheel_url: ${{ steps.meta.outputs.torch_wheel_url }}
+      torch_spec: ${{ steps.meta.outputs.torch_spec }}
+      torch_index_url: ${{ steps.meta.outputs.torch_index_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release metadata
+        id: meta
+        env:
+          INPUT_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs['release-tag'] || '' }}
+          INPUT_PYTHON_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs['python-version'] || '3.13' }}
+          INPUT_CUDA_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs['cuda-version'] || '13.0.0' }}
+          INPUT_TORCH_WHEEL_URL: ${{ github.event_name == 'workflow_dispatch' && inputs['torch-wheel-url'] || '' }}
+          INPUT_TORCH_SPEC: ${{ github.event_name == 'workflow_dispatch' && inputs['torch-spec'] || 'torch --pre' }}
+          INPUT_TORCH_INDEX_URL: ${{ github.event_name == 'workflow_dispatch' && inputs['torch-index-url'] || 'https://download.pytorch.org/whl/nightly/cu130' }}
+        run: |
+          set -euo pipefail
+          release_tag="${INPUT_RELEASE_TAG}"
+          if [ -z "${release_tag}" ] && [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            release_tag="${GITHUB_REF_NAME}"
+          fi
+          if [ -z "${release_tag}" ]; then
+            release_tag="gb10-deepgemm-v$(git rev-parse --short HEAD)"
+          fi
+
+          cuda_suffix="cu$(echo "${INPUT_CUDA_VERSION}" | awk -F. '{print $1 $2}')"
+          echo "release_tag=${release_tag}" >> "${GITHUB_OUTPUT}"
+          echo "python_version=${INPUT_PYTHON_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "cuda_version=${INPUT_CUDA_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "cuda_suffix=${cuda_suffix}" >> "${GITHUB_OUTPUT}"
+          echo "torch_wheel_url=${INPUT_TORCH_WHEEL_URL}" >> "${GITHUB_OUTPUT}"
+          echo "torch_spec=${INPUT_TORCH_SPEC}" >> "${GITHUB_OUTPUT}"
+          echo "torch_index_url=${INPUT_TORCH_INDEX_URL}" >> "${GITHUB_OUTPUT}"
+
+  build-wheel:
+    needs: setup
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ needs.setup.outputs.python_version }}
+
+      - name: Install CUDA ${{ needs.setup.outputs.cuda_version }}
+        uses: Jimver/cuda-toolkit@v0.2.26
+        with:
+          cuda: ${{ needs.setup.outputs.cuda_version }}
+          linux-local-args: '["--toolkit"]'
+          method: network
+
+      - name: Install Python build dependencies
+        env:
+          TORCH_WHEEL_URL: ${{ needs.setup.outputs.torch_wheel_url }}
+          TORCH_SPEC: ${{ needs.setup.outputs.torch_spec }}
+          TORCH_INDEX_URL: ${{ needs.setup.outputs.torch_index_url }}
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install setuptools==75.8.0 ninja packaging wheel pybind11
+          if [ -n "${TORCH_WHEEL_URL}" ]; then
+            pip install "${TORCH_WHEEL_URL}"
+          else
+            pip install ${TORCH_SPEC} --index-url "${TORCH_INDEX_URL}"
+          fi
+          nvcc --version
+          python - <<'PY'
+          import torch
+          print("PyTorch:", torch.__version__)
+          print("CUDA:", torch.version.cuda)
+          print("CXX11 ABI:", int(torch._C._GLIBCXX_USE_CXX11_ABI))
+          PY
+
+      - name: Build native SM121A wheel
+        run: |
+          set -euo pipefail
+          python setup.py bdist_wheel --dist-dir=dist
+
+          torch_minor="$(python - <<'PY'
+          import torch
+          version = torch.__version__.split("+", 1)[0].split(".")
+          print(".".join(version[:2]))
+          PY
+          )"
+          cxx11_abi="$(python - <<'PY'
+          import torch
+          print(int(torch._C._GLIBCXX_USE_CXX11_ABI))
+          PY
+          )"
+          wheel="$(ls dist/*.whl)"
+          tag="${{ needs.setup.outputs.cuda_suffix }}torch${torch_minor}cxx11abi${cxx11_abi}sm121a"
+          renamed="$(basename "${wheel}" | sed "s/-/+${tag}-/2")"
+          mv "${wheel}" "dist/${renamed}"
+          ls -lh dist
+
+      - name: Verify embedded CUDA images
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import re
+          import subprocess
+          import tempfile
+          import zipfile
+          from pathlib import Path
+
+          allowed = {"sm_121a", "compute_121a", "sm_121", "compute_121"}
+          bad = set()
+          found = False
+
+          with tempfile.TemporaryDirectory() as tmp:
+              tmp_path = Path(tmp)
+              for wheel in Path("dist").glob("*.whl"):
+                  with zipfile.ZipFile(wheel) as zf:
+                      zf.extractall(tmp_path / wheel.stem)
+                  for so in (tmp_path / wheel.stem).rglob("*.so"):
+                      proc = subprocess.run(
+                          ["cuobjdump", "--list-elf", str(so)],
+                          text=True,
+                          stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT,
+                          check=False,
+                      )
+                      tokens = set(re.findall(r"\b(?:sm|compute)_[0-9]+[a-z]?\b", proc.stdout))
+                      if tokens:
+                          found = True
+                          bad.update(tokens - allowed)
+
+          if bad:
+              raise SystemExit(f"Unexpected CUDA images in GB10 wheel: {sorted(bad)}")
+          if not found:
+              print("No embedded CUDA images found; DeepGEMM kernels are JIT-compiled at runtime.")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deepgemm-${{ needs.setup.outputs.cuda_suffix }}-aarch64-sm121a
+          path: dist/*.whl
+
+  publish:
+    needs: [setup, build-wheel]
+    if: github.event_name == 'push' || inputs['publish-release'] == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Upload wheel to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.setup.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find artifacts -type f -name "*.whl" -exec cp {} dist/ \;
+          test -n "$(find dist -type f -print -quit)"
+
+          if ! gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release create "${RELEASE_TAG}" \
+              --title "${RELEASE_TAG}" \
+              --notes "GB10 Spark DeepGEMM release with native SM121A wheel metadata." \
+              --prerelease
+          fi
+          gh release upload "${RELEASE_TAG}" dist/* --clobber

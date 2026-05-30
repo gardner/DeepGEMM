@@ -8,9 +8,12 @@
 name: Build wheels and deploy
 
 on:
-  create:
-    tags:
-      - v*
+  workflow_dispatch:
+    inputs:
+      release-version:
+        description: "Existing tag or release name to publish."
+        required: true
+        type: string
 
 jobs:
   setup_release:
@@ -21,7 +24,7 @@ jobs:
     steps:
       - name: Get the tag version
         id: extract_branch
-        run: echo ::set-output name=branch::${GITHUB_REF#refs/tags/}
+        run: echo "branch=${{ inputs['release-version'] }}" >> "${GITHUB_OUTPUT}"
         shell: bash
       - name: Create Release
         id: create_release
