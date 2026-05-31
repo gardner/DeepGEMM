@@ -16,6 +16,8 @@ def test_gb10_release_workflow_builds_native_sm121a_wheel():
     workflow = read(".github/workflows/gb10-release.yml")
 
     assert "gb10-deepgemm-v*" in workflow
+    assert 'default: "13.0.2"' in workflow
+    assert "Jimver/cuda-toolkit@v0.2.29" in workflow
     assert 'TORCH_CUDA_ARCH_LIST: "12.1a"' in workflow
     assert 'CMAKE_CUDA_ARCHITECTURES: "121a"' in workflow
     assert "torch-wheel-url" in workflow

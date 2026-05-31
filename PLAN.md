@@ -21,11 +21,13 @@ Finish our DeepGEMM fork as a durable GB10/DGX Spark dependency: build and publi
 - Architecture 12 now dispatches to SM120 kernels for GEMM, BF16, einsum, HyperConnection, and MQA logits paths covered by PR #324.
 - `.github/workflows/gb10-release.yml` builds an aarch64 SM121A-labeled wheel, but DeepGEMM kernels are JIT-compiled at runtime. The critical runtime behavior is in `csrc/jit/device_runtime.hpp` and `csrc/jit/compiler.hpp`.
 - CUDA 13.0 is the validated local toolkit. `/usr/local/cuda` currently points at a partial CUDA 13.2 layout, so local validation should set `CUDA_HOME=/usr/local/cuda-13.0`.
+- GitHub Actions release builds use CUDA Toolkit `13.0.2`, which is the CUDA 13.0 update available through `Jimver/cuda-toolkit@v0.2.29`.
 
 ## Local Validation
 
 - Static GB10 discipline tests pass:
   - `uv run --with pytest python -m pytest -q tests/test_gb10_release_discipline.py`
+- The first release tag run `gb10-deepgemm-v13efe6d` failed before build because `Jimver/cuda-toolkit@v0.2.26` did not provide CUDA `13.0.0`; the workflow now defaults to CUDA `13.0.2` and action `v0.2.29`.
 - Local aarch64 wheel builds against PyTorch CUDA 13 nightly using PyPI, PyTorch nightly, and NVIDIA PyPI as indexes:
   - `deep_gemm-2.5.0-cp313-cp313-linux_aarch64.whl`
 - Installed-wheel smoke from outside the source tree passes on GB10:

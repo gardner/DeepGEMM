@@ -15,7 +15,7 @@ on:
       cuda-version:
         description: "CUDA toolkit version to install."
         required: false
-        default: "13.0.0"
+        default: "13.0.2"
         type: string
       torch-wheel-url:
         description: "Optional prebuilt GB10 PyTorch wheel URL."
@@ -74,7 +74,7 @@ jobs:
         env:
           INPUT_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs['release-tag'] || '' }}
           INPUT_PYTHON_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs['python-version'] || '3.13' }}
-          INPUT_CUDA_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs['cuda-version'] || '13.0.0' }}
+          INPUT_CUDA_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs['cuda-version'] || '13.0.2' }}
           INPUT_TORCH_WHEEL_URL: ${{ github.event_name == 'workflow_dispatch' && inputs['torch-wheel-url'] || '' }}
           INPUT_TORCH_SPEC: ${{ github.event_name == 'workflow_dispatch' && inputs['torch-spec'] || 'torch --pre' }}
           INPUT_TORCH_INDEX_URL: ${{ github.event_name == 'workflow_dispatch' && inputs['torch-index-url'] || 'https://download.pytorch.org/whl/nightly/cu130' }}
@@ -110,7 +110,7 @@ jobs:
           python-version: ${{ needs.setup.outputs.python_version }}
 
       - name: Install CUDA ${{ needs.setup.outputs.cuda_version }}
-        uses: Jimver/cuda-toolkit@v0.2.26
+        uses: Jimver/cuda-toolkit@v0.2.29
         with:
           cuda: ${{ needs.setup.outputs.cuda_version }}
           linux-local-args: '["--toolkit"]'
