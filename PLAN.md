@@ -29,6 +29,8 @@ Finish our DeepGEMM fork as a durable GB10/DGX Spark dependency: build and publi
   - `uv run --with pytest python -m pytest -q tests/test_gb10_release_discipline.py`
 - The first release tag run `gb10-deepgemm-v13efe6d` failed before build because `Jimver/cuda-toolkit@v0.2.26` did not provide CUDA `13.0.0`; the workflow now defaults to CUDA `13.0.2` and action `v0.2.29`.
 - The second release tag run `gb10-deepgemm-v3fc1623` built the native aarch64 wheel on `ubuntu-24.04-arm`, verified artifacts, and failed only during publish because `gh release` had no repository context. The publish step now passes `--repo "${GH_REPO}"` explicitly.
+- Release tag `gb10-deepgemm-vf873d63` passed end to end and published:
+  - `deep_gemm-2.5.0+cu130torch2.13cxx11abi1sm121a-cp313-cp313-linux_aarch64.whl`
 - Local aarch64 wheel builds against PyTorch CUDA 13 nightly using PyPI, PyTorch nightly, and NVIDIA PyPI as indexes:
   - `deep_gemm-2.5.0-cp313-cp313-linux_aarch64.whl`
 - Installed-wheel smoke from outside the source tree passes on GB10:
@@ -107,5 +109,5 @@ Finish our DeepGEMM fork as a durable GB10/DGX Spark dependency: build and publi
 - [ ] Fused SM120 MegaMoE kernel replaces the composed staging path.
 - [ ] Multi-rank MegaMoE validation passes.
 - [ ] NVFP4 routing decision documented.
-- [ ] GitHub Release wheel published.
+- [x] GitHub Release wheel published.
 - [ ] vLLM container consumes the published wheel successfully.
