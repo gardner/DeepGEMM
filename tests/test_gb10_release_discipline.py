@@ -92,3 +92,13 @@ def test_sm120_runtime_headers_are_packaged():
 
     setup_py = read("setup.py")
     assert "'include/deep_gemm/**/*'" in setup_py
+
+
+def test_sm121_megamoe_uses_composed_sm120_path():
+    mega = read("deep_gemm/mega/__init__.py")
+
+    assert "_fp8_fp4_mega_moe_sm120" in mega
+    assert "_untranspose_sf_from_utccp" in mega
+    assert "gemm_m = max(expected_m, 64)" in mega
+    assert "torch.cuda.get_device_capability(y.device)[0] == 12" in mega
+    assert "m_grouped_fp8_fp4_gemm_nt_masked" in mega

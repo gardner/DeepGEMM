@@ -40,6 +40,13 @@ Finish our DeepGEMM fork as a durable GB10/DGX Spark dependency: build and publi
 - Full upstream HyperConnection script passes from the built wheel outside the source tree:
   - `PYTHONPATH=/mnt/dgx-ssd/src/GB10/DeepGEMM/tests python /mnt/dgx-ssd/src/GB10/DeepGEMM/tests/test_hyperconnection.py`
   - Note: `pytest` collection against this file also collects imported helper `deep_gemm.testing.test_filter`, so use the script entrypoint or adjust upstream test naming before treating that pytest collection behavior as a kernel failure.
+- The SM100 MegaMoE JIT path cannot be reused directly on GB10. Dispatching architecture 12 into `sm100_fp8_fp4_mega_moe` makes NVCC target `sm_120f`, but `ptxas` rejects the SM100-only `tcgen05.*`, `.cta_group::2`, and `.block32` instructions.
+- A correctness-first SM120 MegaMoE path now runs on GB10 by composing the imported SM120 grouped FP8/FP4 GEMMs with PyTorch staging, SwiGLU, FP8 recast, and local combine logic:
+  - Static release discipline tests pass.
+  - The composed path JIT logs show both L1 and L2 grouped GEMMs compiling for `sm_120f`.
+  - A single-rank deterministic smoke passes on GB10 with finite nonzero output and `stats_sum == num_tokens * num_topk`.
+  - A small dequantized-reference accuracy smoke passes with `diff ~= 2.6e-05`.
+  - The composed path pads per-expert GEMM work buffers to the SM120 grouped GEMM tile floor (`64`) while preserving the real expert token counts as masks.
 
 ## Definition Of Done
 
@@ -78,8 +85,9 @@ Finish our DeepGEMM fork as a durable GB10/DGX Spark dependency: build and publi
 
 ## Known Gaps And Risks
 
-- PR #324 does not add SM120 MegaMoE API dispatch. If vLLM requires DeepGEMM MegaMoE on GB10, this remains kernel work.
+- PR #324 does not add SM120 MegaMoE API dispatch. The current fork has an accurate correctness-first SM120 composed path, but the performant endpoint remains a real fused-kernel project.
 - PR #324 supports FP4/MXFP4-style paths, while upstream explicitly says no NVFP4 plan. This is the biggest strategy check for native NVFP4.
+- Multi-rank MegaMoE all-gather/combine behavior still needs EP validation; current GB10 validation is single-rank.
 - The release workflow must build against the exact PyTorch ABI used in the final vLLM image.
 - GitHub-hosted arm64 runners plus CUDA toolkit installation may be fragile; keep release workflow manual and artifact-focused until proven.
 - JIT cache keys include compiler signature, flags, and code. After architecture mapping changes, clear `~/.deep_gemm/cache` during validation to avoid stale cubins.
@@ -91,7 +99,10 @@ Finish our DeepGEMM fork as a durable GB10/DGX Spark dependency: build and publi
 - [x] SM120/SM121 kernels imported.
 - [x] Local wheel builds.
 - [x] GB10 JIT logs show expected SM12 target.
+- [x] Single-rank SM120 MegaMoE composed path runs on GB10.
 - [ ] GB10 correctness suite passes.
+- [ ] Fused SM120 MegaMoE kernel replaces the composed staging path.
+- [ ] Multi-rank MegaMoE validation passes.
 - [ ] NVFP4 routing decision documented.
 - [ ] GitHub Release wheel published.
 - [ ] vLLM container consumes the published wheel successfully.
