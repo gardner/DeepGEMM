@@ -28,6 +28,7 @@ Finish our DeepGEMM fork as a durable GB10/DGX Spark dependency: build and publi
 - Static GB10 discipline tests pass:
   - `uv run --with pytest python -m pytest -q tests/test_gb10_release_discipline.py`
 - The first release tag run `gb10-deepgemm-v13efe6d` failed before build because `Jimver/cuda-toolkit@v0.2.26` did not provide CUDA `13.0.0`; the workflow now defaults to CUDA `13.0.2` and action `v0.2.29`.
+- The second release tag run `gb10-deepgemm-v3fc1623` built the native aarch64 wheel on `ubuntu-24.04-arm`, verified artifacts, and failed only during publish because `gh release` had no repository context. The publish step now passes `--repo "${GH_REPO}"` explicitly.
 - Local aarch64 wheel builds against PyTorch CUDA 13 nightly using PyPI, PyTorch nightly, and NVIDIA PyPI as indexes:
   - `deep_gemm-2.5.0-cp313-cp313-linux_aarch64.whl`
 - Installed-wheel smoke from outside the source tree passes on GB10:
@@ -82,7 +83,7 @@ Finish our DeepGEMM fork as a durable GB10/DGX Spark dependency: build and publi
    - then the full correctness list above.
 7. Check NVFP4/MXFP4 compatibility against vLLM tensor layouts. If incompatible, decide whether to add a DeepGEMM NVFP4 adapter/kernel or keep NVFP4 routed through another backend.
 8. Dispatch the release workflow:
-   - `gh workflow run gb10-release.yml -R gardner/DeepGEMM -f torch-wheel-url=<url> -f cuda-version=13.0.0`
+   - `gh workflow run gb10-release.yml -R gardner/DeepGEMM -f torch-wheel-url=<url> -f cuda-version=13.0.2`
 9. Download the wheel, install it into the vLLM fork/container, and run a vLLM DeepGEMM probe before tagging the dependency in the root stack.
 
 ## Known Gaps And Risks

@@ -23,6 +23,9 @@ def test_gb10_release_workflow_builds_native_sm121a_wheel():
     assert "torch-wheel-url" in workflow
     assert "cuobjdump" in workflow
     assert "gh release upload" in workflow
+    assert "GH_REPO: ${{ github.repository }}" in workflow
+    assert 'gh release view "${RELEASE_TAG}" --repo "${GH_REPO}"' in workflow
+    assert 'gh release upload "${RELEASE_TAG}" dist/* --repo "${GH_REPO}" --clobber' in workflow
 
 
 def test_upstream_publish_matrix_is_manual_only_for_the_fork():
