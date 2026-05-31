@@ -28,3 +28,67 @@ def test_upstream_publish_matrix_is_manual_only_for_the_fork():
 
     assert "workflow_dispatch:" in header
     assert "create:" not in header
+
+
+def test_sm121_runtime_reuses_sm120_family_cubin_when_supported():
+    runtime = read("csrc/jit/device_runtime.hpp")
+    compiler = read("csrc/jit/compiler.hpp")
+
+    assert "set_support_arch_family" in runtime
+    assert "major == 12" in runtime
+    assert 'return "120";' in runtime
+    assert 'return support_arch_family ? "120f" : "120a";' in runtime
+    assert "device_runtime->set_support_arch_family" in compiler
+    assert "-gencode=arch=compute_{}" in compiler
+
+
+def test_architecture_12_dispatches_to_sm120_kernels():
+    dispatch_files = {
+        "csrc/apis/gemm.hpp": [
+            "sm120_fp8_fp4_gemm_1d1d",
+            "sm120_bf16_gemm",
+            "arch_major == 12",
+        ],
+        "csrc/apis/hyperconnection.hpp": [
+            "sm120_tf32_hc_prenorm_gemm",
+            "arch_major == 12",
+        ],
+        "csrc/apis/attention.hpp": [
+            "sm120_fp8_fp4_gemm_1d1d",
+            "sm120_fp4_mqa_logits",
+            "arch_major == 12",
+        ],
+        "csrc/apis/einsum.hpp": [
+            "sm120_bmn_bnk_mn_gemm",
+            "sm120_fp8_fp4_bmm",
+            "arch_major == 12",
+        ],
+    }
+
+    for path, needles in dispatch_files.items():
+        source = read(path)
+        for needle in needles:
+            assert needle in source, f"{needle!r} missing from {path}"
+
+
+def test_sm120_runtime_headers_are_packaged():
+    required_paths = [
+        "csrc/jit_kernels/heuristics/sm120.hpp",
+        "csrc/jit_kernels/impls/sm120_fp8_fp4_gemm_1d1d.hpp",
+        "csrc/jit_kernels/impls/sm120_bf16_gemm.hpp",
+        "csrc/jit_kernels/impls/sm120_bmk_bnk_mn.hpp",
+        "csrc/jit_kernels/impls/sm120_tf32_hc_prenorm_gemm.hpp",
+        "deep_gemm/include/deep_gemm/common/sm120_utils.cuh",
+        "deep_gemm/include/deep_gemm/impls/sm120_fp8_fp4_gemm_1d1d.cuh",
+        "deep_gemm/include/deep_gemm/impls/sm120_bf16_gemm.cuh",
+        "deep_gemm/include/deep_gemm/impls/sm120_bmk_bnk_mn.cuh",
+        "deep_gemm/include/deep_gemm/impls/sm120_tf32_hc_prenorm_gemm.cuh",
+        "deep_gemm/include/deep_gemm/mma/sm120.cuh",
+        "tests/test_split_k_swap.py",
+    ]
+
+    missing = [path for path in required_paths if not (ROOT / path).exists()]
+    assert not missing
+
+    setup_py = read("setup.py")
+    assert "'include/deep_gemm/**/*'" in setup_py
